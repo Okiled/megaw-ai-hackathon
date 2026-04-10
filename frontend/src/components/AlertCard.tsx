@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, X, TrendingUp } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useLanguage } from "@/lib/language-context";
 
 type AlertLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | string;
 
@@ -14,8 +14,23 @@ interface AlertCardProps {
 }
 
 export function AlertCard({ productName, score, level, onDismiss }: AlertCardProps) {
-  // Tentukan warna berdasarkan level severity
+  const { language } = useLanguage();
   const isCritical = level === "CRITICAL" || score >= 3.5;
+  const copy = language === "en"
+    ? {
+        critical: "Critical Anomaly",
+        alert: "High Alert",
+        scoreLabel: "Burst Score",
+        title: `Product spike detected: ${productName}`,
+        body: `Sales activity is running ${score.toFixed(1)}x above normal. Check stock immediately to avoid stockout.`,
+      }
+    : {
+        critical: "Anomali Kritis",
+        alert: "High Alert",
+        scoreLabel: "Burst Score",
+        title: `Ada lonjakan produk: ${productName}`,
+        body: `Aktivitas penjualan terdeteksi ${score.toFixed(1)}x lebih tinggi dari biasanya. Cek stok segera untuk menghindari kehabisan barang.`,
+      };
   
   const styles = isCritical
     ? "bg-red-50 border-red-200 text-red-900"
@@ -39,20 +54,19 @@ export function AlertCard({ productName, score, level, onDismiss }: AlertCardPro
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white ${iconColor} border border-current`}>
-                {isCritical ? "Critical Anomaly" : "High Alert"}
+                {isCritical ? copy.critical : copy.alert}
               </span>
               <span className="text-xs font-medium opacity-75">
-                Burst Score: {score.toFixed(2)}
+                {copy.scoreLabel}: {score.toFixed(2)}
               </span>
             </div>
             
             <h4 className="font-bold text-lg">
-              Ada Lonjakan Product: {productName}
+              {copy.title}
             </h4>
             
             <p className="text-sm mt-1 opacity-90 leading-relaxed">
-              Terdeteksi aktivitas penjualan <strong>{score.toFixed(1)}x lipat</strong> dari biasanya. 
-              Sistem merekomendasikan cek stok segera untuk menghindari kehabisan barang (stockout).
+              {copy.body}
             </p>
           </div>
 

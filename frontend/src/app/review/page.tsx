@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useMemo, useState, useRef, useEffect } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "@/components/ui/Navbar";
 import { Card, CardContent } from "@/components/ui/Card";
 import { useTheme } from "@/lib/theme-context";
 import { API_URL } from "@/lib/api";
+import { useLanguage } from "@/lib/language-context";
 
 type SentimentResult = {
   sentiment: string;
@@ -21,6 +22,21 @@ type CsvSummary = {
   negative_pct: number;
   neutral_pct: number;
   total: number;
+};
+
+type ManualAnalyzeResponse = {
+  error?: string;
+  result?: {
+    confidence?: number;
+    emoji?: string;
+    sentiment?: string;
+  };
+};
+
+type CsvAnalyzeResponse = {
+  error?: string;
+  results?: SentimentResult[];
+  summary?: CsvSummary | null;
 };
 
 type HistoryItem = {
@@ -52,6 +68,67 @@ function saveHistory(items: HistoryItem[]) {
 
 export default function ReviewPage() {
   const { theme } = useTheme();
+  const { language } = useLanguage();
+
+  const copy =
+    language === "en"
+      ? {
+          title: "Review",
+          subtitle: "Run sentiment analysis manually or in bulk using CSV.",
+          manual: "Manual Input",
+          csv: "Upload CSV",
+          placeholder: "Write one review here...",
+          analyze: "Analyze",
+          processing: "Processing...",
+          confidence: "Confidence",
+          history: "Analysis History (Latest 5)",
+          clearAll: "Clear All",
+          delete: "Delete",
+          reviewInput: "Review Data Input",
+          uploadHint: "Upload a CSV file for bulk sentiment analysis.",
+          columnHint: "Make sure the file includes a Review column.",
+          chooseFile: "Choose File",
+          summary: "Summary",
+          positive: "Positive",
+          negative: "Negative",
+          neutral: "Neutral",
+          total: "Total",
+          csvResult: "CSV Result",
+          sentiment: "Sentiment",
+          noServerResponse: "No response from the server. Check the ML/API service",
+          analyzeFailed: "Failed to analyze",
+          fileAnalyzeFailed: "Failed to analyze file",
+          serviceError: "Failed to connect to analysis service",
+        }
+      : {
+          title: "Review",
+          subtitle: "Analisis sentimen review secara manual atau batch lewat CSV.",
+          manual: "Input Manual",
+          csv: "Upload CSV",
+          placeholder: "Tulis satu review di sini...",
+          analyze: "Analisa",
+          processing: "Memproses...",
+          confidence: "Keyakinan",
+          history: "Riwayat Analisis (5 Terbaru)",
+          clearAll: "Hapus Semua",
+          delete: "Hapus",
+          reviewInput: "Input Data Review",
+          uploadHint: "Upload CSV untuk analisis sentimen massal.",
+          columnHint: "Pastikan file memiliki kolom Review.",
+          chooseFile: "Pilih File",
+          summary: "Ringkasan",
+          positive: "Positif",
+          negative: "Negatif",
+          neutral: "Netral",
+          total: "Total",
+          csvResult: "Hasil CSV",
+          sentiment: "Sentimen",
+          noServerResponse: "Tidak ada respons dari server. Cek layanan ML/API",
+          analyzeFailed: "Gagal menganalisa",
+          fileAnalyzeFailed: "Gagal menganalisa file",
+          serviceError: "Gagal terhubung ke layanan analisa",
+        };
+
   const [mode, setMode] = useState<"manual" | "csv">("manual");
   const [text, setText] = useState("");
   const [manualResult, setManualResult] = useState<SentimentResult | null>(null);
@@ -67,7 +144,7 @@ export default function ReviewPage() {
   }, []);
 
   const handleDeleteHistory = (id: string) => {
-    const updated = history.filter(h => h.id !== id);
+    const updated = history.filter((item) => item.id !== id);
     setHistory(updated);
     saveHistory(updated);
   };
@@ -88,22 +165,21 @@ export default function ReviewPage() {
         body: JSON.stringify({ text }),
       });
       const raw = await res.text();
-      let data: any;
+      let data: ManualAnalyzeResponse;
       try {
         data = JSON.parse(raw);
       } catch {
-        // Return raw as message if non-JSON (e.g., HTML error)
-        throw new Error(raw?.trim() ? raw.slice(0, 200) : "Tidak ada respons dari server (cek layanan ML/API)");
+        throw new Error(raw?.trim() ? raw.slice(0, 200) : copy.noServerResponse);
       }
-      if (!res.ok) throw new Error(data?.error || "Gagal menganalisa");
+      if (!res.ok) throw new Error(data?.error || copy.analyzeFailed);
+
       const result = {
         sentiment: data?.result?.sentiment || "N/A",
         confidence: data?.result?.confidence || 0,
-        emoji: data?.result?.emoji || "😐",
+        emoji: data?.result?.emoji || ":|",
       };
       setManualResult(result);
-      
-      // Save to history
+
       const newItem: HistoryItem = {
         id: Date.now().toString(),
         text: text.trim(),
@@ -112,13 +188,11 @@ export default function ReviewPage() {
         emoji: result.emoji,
         timestamp: Date.now(),
       };
-      const updated = [newItem, ...history.filter(h => h.text !== text.trim())].slice(0, MAX_HISTORY);
+      const updated = [newItem, ...history.filter((item) => item.text !== text.trim())].slice(0, MAX_HISTORY);
       setHistory(updated);
       saveHistory(updated);
-      
-      setError(null);
-    } catch (err: any) {
-      setError(err?.message || "Gagal terhubung ke layanan analisa");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : copy.serviceError);
     } finally {
       setLoading(false);
     }
@@ -137,25 +211,25 @@ export default function ReviewPage() {
         body: formData,
       });
       const raw = await res.text();
-      let data: any;
+      let data: CsvAnalyzeResponse;
       try {
         data = JSON.parse(raw);
       } catch {
-        throw new Error(raw?.trim() ? raw.slice(0, 200) : "Tidak ada respons dari server (cek layanan ML/API)");
+        throw new Error(raw?.trim() ? raw.slice(0, 200) : copy.noServerResponse);
       }
-      if (!res.ok) throw new Error(data?.error || "Gagal menganalisa file");
+      if (!res.ok) throw new Error(data?.error || copy.fileAnalyzeFailed);
+
       setCsvSummary(data?.summary || null);
       setCsvResults(
-        (data?.results || []).map((r: any) => ({
-          review: r.review,
-          sentiment: r.sentiment,
-          confidence: r.confidence,
-          emoji: r.emoji,
-        }))
+        (data?.results || []).map((item) => ({
+          review: item.review,
+          sentiment: item.sentiment,
+          confidence: item.confidence,
+          emoji: item.emoji,
+        })),
       );
-      setError(null);
-    } catch (err: any) {
-      setError(err?.message || "Gagal terhubung ke layanan analisa");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : copy.serviceError);
     } finally {
       setLoading(false);
     }
@@ -163,10 +237,10 @@ export default function ReviewPage() {
 
   const pieStyle = useMemo(() => {
     if (!csvSummary || csvSummary.total === 0) return {};
-    const p = csvSummary.positive_pct || 0;
-    const n = csvSummary.negative_pct || 0;
+    const positivePct = csvSummary.positive_pct || 0;
+    const negativePct = csvSummary.negative_pct || 0;
     return {
-      backgroundImage: `conic-gradient(#16a34a 0 ${p}%, #dc2626 ${p}% ${p + n}%, #64748b ${p + n}% 100%)`,
+      backgroundImage: `conic-gradient(#16a34a 0 ${positivePct}%, #dc2626 ${positivePct}% ${positivePct + negativePct}%, #64748b ${positivePct + negativePct}% 100%)`,
     };
   }, [csvSummary]);
 
@@ -183,125 +257,122 @@ export default function ReviewPage() {
       }`}
     >
       <Navbar />
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 sm:py-8">
         <div className="mb-6 sm:mb-8">
-          <h1 className="text-2xl font-bold">Review</h1>
-          <p className={`text-sm ${subText}`}>
-            Analisis sentimen review secara manual atau batch lewat CSV.
-          </p>
+          <h1 className="text-2xl font-bold">{copy.title}</h1>
+          <p className={`text-sm ${subText}`}>{copy.subtitle}</p>
         </div>
 
-        <div className="flex flex-wrap gap-2 mb-6">
+        <div className="mb-6 flex flex-wrap gap-2">
           <button
             onClick={() => setMode("manual")}
-            className={`px-4 py-2 rounded-lg border text-sm font-semibold transition-colors ${
+            className={`rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
               mode === "manual"
-                ? "bg-red-600 text-white border-red-600"
+                ? "border-red-600 bg-red-600 text-white"
                 : theme === "dark"
-                  ? "bg-gray-800 border-gray-700 text-gray-200"
-                  : "bg-white border-gray-200 text-gray-700"
+                  ? "border-gray-700 bg-gray-800 text-gray-200"
+                  : "border-gray-200 bg-white text-gray-700"
             }`}
           >
-            Input Manual
+            {copy.manual}
           </button>
           <button
             onClick={() => setMode("csv")}
-            className={`px-4 py-2 rounded-lg border text-sm font-semibold transition-colors ${
+            className={`rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
               mode === "csv"
-                ? "bg-red-600 text-white border-red-600"
+                ? "border-red-600 bg-red-600 text-white"
                 : theme === "dark"
-                  ? "bg-gray-800 border-gray-700 text-gray-200"
-                  : "bg-white border-gray-200 text-gray-700"
+                  ? "border-gray-700 bg-gray-800 text-gray-200"
+                  : "border-gray-200 bg-white text-gray-700"
             }`}
           >
-            Upload CSV
+            {copy.csv}
           </button>
         </div>
 
         {mode === "manual" && (
           <Card className={`${cardBase} shadow-sm`}>
-            <CardContent className="p-4 sm:p-6 space-y-4">
+            <CardContent className="space-y-4 p-4 sm:p-6">
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={5}
-                className={`w-full rounded-lg border px-4 py-3 focus:ring-2 focus:ring-red-500 outline-none ${
+                className={`w-full rounded-lg border px-4 py-3 outline-none focus:ring-2 focus:ring-red-500 ${
                   theme === "dark"
-                    ? "bg-gray-900 border-gray-700 text-gray-100"
-                      : "bg-white border-gray-300 text-gray-900 placeholder:text-gray-500"
+                    ? "border-gray-700 bg-gray-900 text-gray-100"
+                    : "border-gray-300 bg-white text-gray-900 placeholder:text-gray-500"
                 }`}
-                placeholder="Tulis satu review di sini..."
+                placeholder={copy.placeholder}
               />
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <button
                   onClick={handleAnalyzeText}
                   disabled={loading || !text.trim()}
-                  className={`px-5 py-2 rounded-lg font-semibold text-sm shadow ${
+                  className={`rounded-lg px-5 py-2 text-sm font-semibold shadow ${
                     loading || !text.trim()
-                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      ? "cursor-not-allowed bg-gray-300 text-gray-500"
                       : "bg-red-600 text-white hover:bg-red-700"
                   }`}
                 >
-                  {loading ? "Memproses..." : "Analisa"}
+                  {loading ? copy.processing : copy.analyze}
                 </button>
                 {error && <span className="text-sm text-red-500">{error}</span>}
               </div>
 
               {manualResult && (
-                <div
-                  className={`mt-2 p-4 rounded-lg border ${cardBase} flex items-center gap-3`}
-                >
+                <div className={`mt-2 flex items-center gap-3 rounded-lg border p-4 ${cardBase}`}>
                   <span className="text-2xl">{manualResult.emoji}</span>
                   <div>
-                    <p className="font-semibold text-lg">{manualResult.sentiment}</p>
-                    <p className={`text-sm ${subText}`}>Keyakinan: {manualResult.confidence}%</p>
+                    <p className="text-lg font-semibold">{manualResult.sentiment}</p>
+                    <p className={`text-sm ${subText}`}>
+                      {copy.confidence}: {manualResult.confidence}%
+                    </p>
                   </div>
                 </div>
               )}
 
-              {/* History Section */}
               {history.length > 0 && (
-                <div className={`mt-6 pt-4 border-t ${theme === "dark" ? "border-gray-700" : "border-gray-200"}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-sm">Riwayat Analisis (5 Terbaru)</h3>
+                <div className={`mt-6 border-t pt-4 ${theme === "dark" ? "border-gray-700" : "border-gray-200"}`}>
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">{copy.history}</h3>
                     <button
                       onClick={handleClearAllHistory}
-                      className={`text-xs px-2 py-1 rounded transition-colors ${
+                      className={`rounded px-2 py-1 text-xs transition-colors ${
                         theme === "dark"
                           ? "text-red-400 hover:bg-red-900/30"
                           : "text-red-600 hover:bg-red-50"
                       }`}
                     >
-                      Hapus Semua
+                      {copy.clearAll}
                     </button>
                   </div>
                   <div className="space-y-2">
                     {history.map((item) => (
                       <div
                         key={item.id}
-                        className={`p-3 rounded-lg border flex items-center gap-3 ${
+                        className={`flex items-center gap-3 rounded-lg border p-3 ${
                           theme === "dark"
-                            ? "bg-gray-900 border-gray-700"
-                            : "bg-gray-50 border-gray-200"
+                            ? "border-gray-700 bg-gray-900"
+                            : "border-gray-200 bg-gray-50"
                         }`}
                       >
-                        <span className="text-xl flex-shrink-0">{item.emoji}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm truncate ${theme === "dark" ? "text-gray-200" : "text-gray-800"}`} title={item.text}>
+                        <span className="shrink-0 text-xl">{item.emoji}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className={`truncate text-sm ${theme === "dark" ? "text-gray-200" : "text-gray-800"}`} title={item.text}>
                             {item.text}
                           </p>
                           <p className={`text-xs ${subText}`}>
-                            {item.sentiment} • {item.confidence}%
+                            {item.sentiment} - {item.confidence}%
                           </p>
                         </div>
                         <button
                           onClick={() => handleDeleteHistory(item.id)}
-                          className={`flex-shrink-0 p-1.5 rounded-full transition-colors ${
+                          className={`shrink-0 rounded-full p-1.5 transition-colors ${
                             theme === "dark"
-                              ? "text-gray-500 hover:text-red-400 hover:bg-red-900/30"
-                              : "text-gray-400 hover:text-red-600 hover:bg-red-50"
+                              ? "text-gray-500 hover:bg-red-900/30 hover:text-red-400"
+                              : "text-gray-400 hover:bg-red-50 hover:text-red-600"
                           }`}
-                          title="Hapus"
+                          title={copy.delete}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -318,29 +389,17 @@ export default function ReviewPage() {
 
         {mode === "csv" && (
           <div className="space-y-4">
-            <Card
-              className={`${cardBase} shadow-sm border-l-4 ${
-                theme === "dark" ? "border-l-green-500" : "border-l-green-500"
-              }`}
-            >
+            <Card className={`${cardBase} border-l-4 border-l-green-500 shadow-sm`}>
               <CardContent className="p-4 sm:p-6">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-start gap-3">
-                    <div
-                      className={`mt-1 w-8 h-8 rounded-full flex items-center justify-center text-green-600 ${
-                        theme === "dark" ? "bg-green-900/30" : "bg-green-100"
-                      }`}
-                    >
-                      📁
+                    <div className={`mt-1 flex h-8 w-8 items-center justify-center rounded-full text-green-600 ${theme === "dark" ? "bg-green-900/30" : "bg-green-100"}`}>
+                      CSV
                     </div>
                     <div>
-                      <p className="font-semibold text-base">Input Data Review</p>
-                      <p className={`text-sm ${subText}`}>
-                        Upload CSV untuk analisis sentimen massal.
-                      </p>
-                      <p className={`text-xs ${subText} mt-1`}>
-                        Pastikan file memiliki kolom <strong>Review</strong>.
-                      </p>
+                      <p className="text-base font-semibold">{copy.reviewInput}</p>
+                      <p className={`text-sm ${subText}`}>{copy.uploadHint}</p>
+                      <p className={`mt-1 text-xs ${subText}`}>{copy.columnHint}</p>
                     </div>
                   </div>
                   <div className="flex items-center">
@@ -350,65 +409,69 @@ export default function ReviewPage() {
                       accept=".csv"
                       className="hidden"
                       onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleAnalyzeFile(f);
+                        const file = e.target.files?.[0];
+                        if (file) handleAnalyzeFile(file);
                       }}
                     />
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="px-4 py-2 rounded-md bg-red-600 text-white font-semibold flex items-center gap-2 shadow hover:bg-red-700"
+                      className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 font-semibold text-white shadow hover:bg-red-700"
                     >
-                      <span className="text-lg">⏏</span>
-                      <span>Pilih File</span>
+                      <span>{copy.chooseFile}</span>
                     </button>
                   </div>
                 </div>
-                {error && <span className="text-sm text-red-500 block mt-2">{error}</span>}
+                {error && <span className="mt-2 block text-sm text-red-500">{error}</span>}
               </CardContent>
             </Card>
 
             {csvSummary && (
               <div className="grid gap-4 md:grid-cols-2">
                 <Card className={`${cardBase} shadow-sm`}>
-                  <CardContent className="p-4 sm:p-6 space-y-3">
-                    <p className="font-semibold">Ringkasan</p>
-                  <div className="flex items-center gap-4">
-                      <div
-                      className="w-48 h-48 rounded-full border-3 border-blue-200 dark:border-blue-300"
-                        style={pieStyle}
-                        aria-label="Pie summary"
-                      />
+                  <CardContent className="space-y-3 p-4 sm:p-6">
+                    <p className="font-semibold">{copy.summary}</p>
+                    <div className="flex items-center gap-4">
+                      <div className="h-48 w-48 rounded-full border-2 border-blue-200" style={pieStyle} aria-label="Pie summary" />
                       <div className="space-y-1 text-sm">
-                        <p className="text-green-600">Positif: {csvSummary.positive} ({csvSummary.positive_pct}%)</p>
-                        <p className="text-red-600">Negatif: {csvSummary.negative} ({csvSummary.negative_pct}%)</p>
-                        <p className={`${subText}`}>Netral: {csvSummary.neutral} ({csvSummary.neutral_pct}%)</p>
-                        <p className={`${subText}`}>Total: {csvSummary.total}</p>
+                        <p className="text-green-600">
+                          {copy.positive}: {csvSummary.positive} ({csvSummary.positive_pct}%)
+                        </p>
+                        <p className="text-red-600">
+                          {copy.negative}: {csvSummary.negative} ({csvSummary.negative_pct}%)
+                        </p>
+                        <p className={subText}>
+                          {copy.neutral}: {csvSummary.neutral} ({csvSummary.neutral_pct}%)
+                        </p>
+                        <p className={subText}>
+                          {copy.total}: {csvSummary.total}
+                        </p>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className={`${cardBase} shadow-sm overflow-hidden`}>
+                <Card className={`${cardBase} overflow-hidden shadow-sm`}>
                   <CardContent className="p-4 sm:p-6">
-                    <p className="font-semibold mb-2">Hasil CSV</p>
+                    <p className="mb-2 font-semibold">{copy.csvResult}</p>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className={`text-left border-b ${theme === "dark" ? "border-gray-700" : "border-gray-200"}`}>
+                          <tr className={`border-b text-left ${theme === "dark" ? "border-gray-700" : "border-gray-200"}`}>
                             <th className="py-2 pr-2">Review</th>
-                            <th className="py-2 pr-2">Sentimen</th>
-                            <th className="py-2">Keyakinan</th>
+                            <th className="py-2 pr-2">{copy.sentiment}</th>
+                            <th className="py-2">{copy.confidence}</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {csvResults.map((r, idx) => (
-                            <tr
-                              key={idx}
-                              className={`border-b last:border-0 ${theme === "dark" ? "border-gray-700" : "border-gray-200"}`}
-                            >
-                              <td className="py-2 pr-2 max-w-[240px] truncate" title={r.review}>{r.review}</td>
-                              <td className="py-2 pr-2">{r.emoji} {r.sentiment}</td>
-                              <td className="py-2">{r.confidence}%</td>
+                          {csvResults.map((result, idx) => (
+                            <tr key={idx} className={`border-b last:border-0 ${theme === "dark" ? "border-gray-700" : "border-gray-200"}`}>
+                              <td className="max-w-[240px] truncate py-2 pr-2" title={result.review}>
+                                {result.review}
+                              </td>
+                              <td className="py-2 pr-2">
+                                {result.emoji} {result.sentiment}
+                              </td>
+                              <td className="py-2">{result.confidence}%</td>
                             </tr>
                           ))}
                         </tbody>
@@ -424,4 +487,3 @@ export default function ReviewPage() {
     </main>
   );
 }
-

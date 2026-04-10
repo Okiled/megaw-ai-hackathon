@@ -10,11 +10,12 @@ import { Badge } from '@/components/ui/Badge';
 import Navbar from '@/components/ui/Navbar';
 import { Package, Plus, TrendingUp, TrendingDown, Minus, PackageOpen, BarChart3, List, ChevronRight, Sparkles, Trash2, ChevronLeft } from "lucide-react";
 import { API_URL } from "@/lib/api";
-import { getToken, getUserId, clearAuth, getAuthHeaders, handleAuthError, requireAuth } from "@/lib/auth";
+import { getUserId, getAuthHeaders, handleAuthError, requireAuth } from "@/lib/auth";
 import { sanitizeProductName, sanitizeNumber } from "@/lib/sanitize";
 import { logger } from "@/lib/logger";
 import { useTheme } from "@/lib/theme-context";
 import { useNotification } from "@/components/ui/NotificationToast";
+import { useLanguage } from "@/lib/language-context";
 
 const UNIT_OPTIONS = [
   { value: 'pcs', label: 'Pcs' },
@@ -51,6 +52,95 @@ export default function ProductsPage() {
   const router = useRouter();
   const { theme } = useTheme();
   const { addNotification } = useNotification();
+  const { language, locale } = useLanguage();
+  const isEnglish = language === "en";
+  const copy = isEnglish
+    ? {
+        title: "Product Management",
+        subtitle: "Manage your catalog, performance, and product ranking.",
+        ranking: "Ranking",
+        grid: "Grid",
+        total: "Total",
+        items: "items",
+        addNew: "Add New Product",
+        addDesc: "Register your menu items here.",
+        productName: "Product Name",
+        productPlaceholder: "Example: Honey Grilled Chicken",
+        unitLabel: "Unit",
+        unitPlaceholder: "Choose unit...",
+        priceLabel: "Price (Optional)",
+        pricePlaceholder: "Example: 25000",
+        saveProduct: "Save Product",
+        loadingCatalog: "Loading catalog data...",
+        emptyTitle: "No products yet",
+        emptyDesc: "Your catalog is still empty. Add your first product to get started.",
+        page: "Page",
+        products: "products",
+        sold7d: "sold (7d)",
+        delete: "Delete",
+        cancel: "Cancel",
+        deleteTitle: "Delete product",
+        prev: "Previous",
+        next: "Next",
+        nameRequired: "Product name cannot be empty",
+        unitRequired: "Please choose a unit",
+        priceNumber: "Price must be numeric",
+        priceNegative: "Price cannot be negative",
+        priceLarge: "Price is too large",
+        nameMin: (count: number) => `Product name must be at least ${count} characters`,
+        nameMax: (count: number) => `Product name must be at most ${count} characters`,
+        nameChars: "Product name may only contain letters, numbers, spaces, and (-_.,)",
+        duplicate: (name: string) => `Product "${name}" already exists. Use a different name.`,
+        saveFailed: "Failed to save",
+        deleteFailed: "Failed to delete product",
+        deleteFailedWithReason: (reason: string) => `Failed to delete: ${reason}`,
+        routeMissing: "Route not found (404). The backend may need a restart.",
+        burstTitle: "Burst Alert Detected",
+        burstMessage: (name: string) => `Product "${name}" is seeing a sales spike`,
+      }
+    : {
+        title: "Manajemen Produk",
+        subtitle: "Kelola katalog, lihat performa, dan ranking produk.",
+        ranking: "Ranking",
+        grid: "Grid",
+        total: "Total",
+        items: "item",
+        addNew: "Tambah Produk Baru",
+        addDesc: "Daftarkan menu jualanmu di sini.",
+        productName: "Nama Produk",
+        productPlaceholder: "Contoh: Ayam Bakar Madu",
+        unitLabel: "Satuan (Unit)",
+        unitPlaceholder: "Pilih satuan...",
+        priceLabel: "Harga (Optional)",
+        pricePlaceholder: "Contoh: 25000",
+        saveProduct: "Simpan Produk",
+        loadingCatalog: "Sedang memuat data katalog...",
+        emptyTitle: "Belum ada produk",
+        emptyDesc: "Katalogmu masih kosong. Mulai tambahkan produk pertamamu.",
+        page: "Halaman",
+        products: "produk",
+        sold7d: "terjual (7h)",
+        delete: "Hapus",
+        cancel: "Batal",
+        deleteTitle: "Hapus produk",
+        prev: "Sebelumnya",
+        next: "Selanjutnya",
+        nameRequired: "Nama produk tidak boleh kosong",
+        unitRequired: "Silakan pilih satuan unit",
+        priceNumber: "Harga harus berupa angka",
+        priceNegative: "Harga tidak boleh negatif",
+        priceLarge: "Harga terlalu besar",
+        nameMin: (count: number) => `Nama produk minimal ${count} karakter`,
+        nameMax: (count: number) => `Nama produk maksimal ${count} karakter`,
+        nameChars: "Nama produk hanya boleh huruf, angka, spasi, dan tanda (-_.,)",
+        duplicate: (name: string) => `Produk "${name}" sudah ada. Gunakan nama lain.`,
+        saveFailed: "Gagal menyimpan",
+        deleteFailed: "Gagal menghapus produk",
+        deleteFailedWithReason: (reason: string) => `Gagal menghapus: ${reason}`,
+        routeMissing: "Route tidak ditemukan (404). Backend mungkin perlu restart.",
+        burstTitle: "Peringatan Lonjakan",
+        burstMessage: (name: string) => `Produk "${name}" mengalami lonjakan penjualan`,
+      };
   const [products, setProducts] = useState<ProductWithAnalytics[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('ranking');
@@ -94,7 +184,7 @@ export default function ProductsPage() {
       if (!res.ok) {
         const contentType = res.headers.get('content-type');
         if (contentType?.includes('text/html')) {
-          throw new Error(`Route tidak ditemukan (404). Backend mungkin perlu restart.`);
+          throw new Error(copy.routeMissing);
         }
         const errorText = await res.text();
         try {
@@ -117,8 +207,8 @@ export default function ProductsPage() {
           headers: getAuthHeaders()
         });
         const data = await res.json();
-        if (data.success) {
-          setProducts((data.data || []).map((p: any) => ({
+          if (data.success) {
+            setProducts((data.data || []).map((p: Omit<ProductWithAnalytics, "analytics" | "sparkline" | "totalSales7d">) => ({
             ...p,
             analytics: null,
             sparkline: [],
@@ -149,8 +239,8 @@ export default function ProductsPage() {
         
         addNotification({
           type: "burst",
-          title: "Burst Alert Detected!",
-          message: `Produk "${product.name}" mengalami lonjakan penjualan`,
+          title: copy.burstTitle,
+          message: copy.burstMessage(product.name),
           productName: product.name,
           burstLevel: product.analytics.burst_level,
         });
@@ -171,19 +261,19 @@ export default function ProductsPage() {
     const trimmed = value.trim();
     
     if (!trimmed) {
-      return "Nama produk tidak boleh kosong";
+      return copy.nameRequired;
     }
     
     if (trimmed.length < PRODUCT_NAME_MIN_LENGTH) {
-      return `Nama produk minimal ${PRODUCT_NAME_MIN_LENGTH} karakter`;
+      return copy.nameMin(PRODUCT_NAME_MIN_LENGTH);
     }
     
     if (trimmed.length > PRODUCT_NAME_MAX_LENGTH) {
-      return `Nama produk maksimal ${PRODUCT_NAME_MAX_LENGTH} karakter`;
+      return copy.nameMax(PRODUCT_NAME_MAX_LENGTH);
     }
     
     if (!PRODUCT_NAME_REGEX.test(trimmed)) {
-      return "Nama produk hanya boleh huruf, angka, spasi, dan tanda (-_.,)";
+      return copy.nameChars;
     }
     
     return null;
@@ -195,15 +285,15 @@ export default function ProductsPage() {
     const numPrice = parseFloat(value);
     
     if (isNaN(numPrice)) {
-      return "Harga harus berupa angka";
+      return copy.priceNumber;
     }
     
     if (numPrice < 0) {
-      return "Harga tidak boleh negatif";
+      return copy.priceNegative;
     }
     
     if (numPrice > 999999999) {
-      return "Harga terlalu besar";
+      return copy.priceLarge;
     }
     
     return null;
@@ -232,7 +322,7 @@ export default function ProductsPage() {
     }
 
     if (!unit) {
-      setError("Silakan pilih satuan unit");
+      setError(copy.unitRequired);
       return;
     }
 
@@ -262,9 +352,9 @@ export default function ProductsPage() {
 
       if (!res.ok) {
         if (result.error?.includes('sudah ada') || result.error?.includes('already exist')) {
-          setError(`Produk "${name.trim()}" sudah ada! Gunakan nama lain.`);
+          setError(copy.duplicate(name.trim()));
         } else {
-          setError(result.error || "Gagal menyimpan");
+          setError(result.error || copy.saveFailed);
         }
         return;
       }
@@ -282,8 +372,8 @@ export default function ProductsPage() {
       setUnit(''); 
       setPrice('');
       
-    } catch (err: any) {
-      setError(err.message || "Terjadi kesalahan");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : copy.saveFailed);
     } finally {
       setIsSubmitting(false);
     }
@@ -327,7 +417,7 @@ export default function ProductsPage() {
         setProducts(previousProducts);
         const contentType = res.headers.get('content-type');
         if (contentType?.includes('text/html')) {
-          throw new Error('Route tidak ditemukan (404). Backend mungkin perlu restart.');
+          throw new Error(copy.routeMissing);
         }
         const errorText = await res.text();
         let errorMessage = `HTTP ${res.status}`;
@@ -345,12 +435,12 @@ export default function ProductsPage() {
       
       if (!result.success) {
         setProducts(previousProducts);
-        setError(result.error || 'Gagal menghapus produk');
+        setError(result.error || copy.deleteFailed);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error('Delete error:', err);
       setProducts(previousProducts);
-      setError(`Gagal menghapus: ${err.message || 'Network error'}`);
+      setError(copy.deleteFailedWithReason(err instanceof Error ? err.message : "Network error"));
     } finally {
       setDeletingId(null);
       setConfirmDeleteId(null);
@@ -376,6 +466,22 @@ export default function ProductsPage() {
     if (!label) return null;
     
     const pct = ((momentum || 0) * 100).toFixed(1);
+
+    if (label === "TRENDING_UP") {
+      return <Badge className="bg-green-100 text-green-700 border-green-200">{isEnglish ? "Up" : "Naik"} +{pct}%</Badge>;
+    }
+    if (label === "GROWING") {
+      return <Badge className="bg-emerald-50 text-emerald-600 border-emerald-200">{isEnglish ? "Growing" : "Tumbuh"} +{pct}%</Badge>;
+    }
+    if (label === "FALLING") {
+      return <Badge className="bg-red-100 text-red-700 border-red-200">{isEnglish ? "Down" : "Turun"} {pct}%</Badge>;
+    }
+    if (label === "DECLINING") {
+      return <Badge className="bg-orange-100 text-orange-700 border-orange-200">{isEnglish ? "Declining" : "Melemah"} {pct}%</Badge>;
+    }
+    if (label === "STABLE") {
+      return <Badge className="bg-gray-100 text-gray-600 border-gray-200">{isEnglish ? "Stable" : "Stabil"}</Badge>;
+    }
     
     switch (label) {
       case 'TRENDING_UP':
@@ -393,6 +499,16 @@ export default function ProductsPage() {
 
   const getBurstBadge = (level: string | undefined) => {
     if (!level || level === 'NORMAL') return null;
+
+    if (level === "CRITICAL") {
+      return <Badge className="bg-red-500 text-white animate-pulse">Viral</Badge>;
+    }
+    if (level === "HIGH") {
+      return <Badge className="bg-orange-500 text-white">{isEnglish ? "Burst" : "Lonjakan"}</Badge>;
+    }
+    if (level === "MEDIUM") {
+      return <Badge className="bg-yellow-100 text-yellow-700">{isEnglish ? "Rising" : "Naik"}</Badge>;
+    }
     
     switch (level) {
       case 'CRITICAL':
@@ -408,11 +524,11 @@ export default function ProductsPage() {
 
   const formatRupiah = (num: number | null) => {
     if (!num) return '-';
-    return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(num);
+    return new Intl.NumberFormat(locale, { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(num);
   };
 
   const Sparkline = ({ data }: { data: number[] }) => {
-    if (!data || data.length === 0) return <span className="text-gray-400 text-xs">No data</span>;
+    if (!data || data.length === 0) return <span className="text-gray-400 text-xs">{isEnglish ? "No data" : "Belum ada data"}</span>;
     
     const max = Math.max(...data, 1);
     const width = 60;
@@ -452,9 +568,9 @@ export default function ProductsPage() {
         <div className="flex flex-col gap-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className={`text-2xl font-bold tracking-tight ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Manajemen Produk</h1>
+              <h1 className={`text-2xl font-bold tracking-tight ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{copy.title}</h1>
               <p className={`text-sm mt-1 ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
-                Kelola katalog, lihat performa & ranking produk.
+                {copy.subtitle}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -470,7 +586,7 @@ export default function ProductsPage() {
                   }`}
                 >
                   <BarChart3 className="w-4 h-4" />
-                  Ranking
+                  {copy.ranking}
                 </button>
                 <button
                   onClick={() => setViewMode('grid')}
@@ -481,14 +597,14 @@ export default function ProductsPage() {
                   }`}
                 >
                   <List className="w-4 h-4" />
-                  Grid
+                  {copy.grid}
                 </button>
               </div>
               <Badge variant="outline" className={`px-4 py-2 text-sm font-medium shadow-sm ${
                 theme === "dark" ? "bg-gray-800 border-gray-700 text-gray-200" : "bg-white border-gray-200"
               }`}>
                 <Package className="w-4 h-4 mr-2 text-red-600" />
-                Total: <span className={`ml-1 font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{products.length} Item</span>
+                {copy.total}: <span className={`ml-1 font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{products.length} {copy.items}</span>
               </Badge>
             </div>
           </div>
@@ -499,9 +615,9 @@ export default function ProductsPage() {
                 <CardHeader>
                   <h2 className={`text-base font-bold flex items-center gap-2 ${theme === "dark" ? "text-white" : ""}`}>
                     <Plus className="w-4 h-4 text-red-600" />
-                    Tambah Produk Baru
+                    {copy.addNew}
                   </h2>
-                  <p className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>Daftarkan menu jualanmu di sini.</p>
+                  <p className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.addDesc}</p>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleSubmit} className="space-y-5">
@@ -513,21 +629,22 @@ export default function ProductsPage() {
                       </div>
                     )}
                     <Input 
-                      label="Nama Produk" 
-                      placeholder="Contoh: Ayam Bakar Madu"
+                      label={copy.productName} 
+                      placeholder={copy.productPlaceholder}
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       className="focus:ring-red-500"
                     />
                     <Select 
-                      label="Satuan (Unit)" 
+                      label={copy.unitLabel}
+                      placeholder={copy.unitPlaceholder}
                       options={UNIT_OPTIONS}
                       value={unit}
                       onChange={(e) => setUnit(e.target.value)}
                     />
                     <Input 
-                      label="Harga (Optional)" 
-                      placeholder="Contoh: 25000"
+                      label={copy.priceLabel}
+                      placeholder={copy.pricePlaceholder}
                       type="number"
                       value={price}
                       inputMode="numeric"
@@ -543,7 +660,7 @@ export default function ProductsPage() {
                       className="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 shadow-sm transition-all" 
                       isLoading={isSubmitting}
                     >
-                      + Simpan Produk
+                      + {copy.saveProduct}
                     </Button>
                   </form>
                 </CardContent>
@@ -555,8 +672,8 @@ export default function ProductsPage() {
                 <div className={`flex flex-col items-center justify-center py-20 rounded-lg border ${
                   theme === "dark" ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
                 }`}>
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mb-4"></div>
-                  <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>Sedang memuat data katalog...</p>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mb-4"></div>
+                  <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.loadingCatalog}</p>
                 </div>
               ) : products.length === 0 ? (
                 <div className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-12 text-center ${
@@ -565,9 +682,9 @@ export default function ProductsPage() {
                   <div className={`p-4 rounded-full shadow-sm mb-4 ${theme === "dark" ? "bg-gray-700" : "bg-white"}`}>
                     <PackageOpen className={`h-10 w-10 ${theme === "dark" ? "text-gray-500" : "text-gray-400"}`} />
                   </div>
-                  <h3 className={`text-lg font-semibold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Belum ada produk</h3>
+                  <h3 className={`text-lg font-semibold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{copy.emptyTitle}</h3>
                   <p className={`text-sm max-w-sm mt-1 mb-6 ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
-                    Katalogmu masih kosong. Mulai tambahkan produk pertamamu.
+                    {copy.emptyDesc}
                   </p>
                 </div>
               ) : viewMode === 'ranking' ? (
@@ -578,14 +695,14 @@ export default function ProductsPage() {
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                       <div className="flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-red-600" />
-                        <h3 className={`font-semibold text-sm ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Product Ranking</h3>
+                          <h3 className={`font-semibold text-sm ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{isEnglish ? "Product Ranking" : "Ranking Produk"}</h3>
                       </div>
                       <div className="flex items-center gap-2 sm:ml-auto">
                         <Badge variant="secondary" className="text-xs">
-                          Halaman {currentPage}/{totalPages || 1}
+                          {copy.page} {currentPage}/{totalPages || 1}
                         </Badge>
                         <Badge variant="outline" className="text-xs">
-                          {products.length} produk
+                          {products.length} {copy.products}
                         </Badge>
                       </div>
                     </div>
@@ -624,7 +741,7 @@ export default function ProductsPage() {
                               <span>{formatRupiah(product.price)}/{product.unit}</span>
                               <span className="hidden sm:inline">•</span>
                               <span className={`font-medium ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>
-                                {product.totalSales7d} terjual
+                                {product.totalSales7d} {copy.sold7d}
                               </span>
                             </div>
                           </div>
@@ -651,25 +768,25 @@ export default function ProductsPage() {
                                     onClick={(e) => handleConfirmDelete(product.id, e)}
                                     className="px-2 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors"
                                   >
-                                    Hapus
+                                    {copy.delete}
                                   </button>
                                   <button
                                     onClick={handleCancelDelete}
                                     className="px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
                                   >
-                                    Batal
+                                    {copy.cancel}
                                   </button>
                                 </>
                               )}
                             </div>
                           ) : (
                             <button
-                              onClick={(e) => handleDeleteClick(product.id, e)}
-                              className="p-1.5 sm:p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors sm:opacity-0 group-hover:opacity-100"
-                              title="Hapus produk"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                                onClick={(e) => handleDeleteClick(product.id, e)}
+                                className="p-1.5 sm:p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors sm:opacity-0 group-hover:opacity-100"
+                                title={copy.deleteTitle}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                           )}
 
                           <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-red-600 transition-colors flex-shrink-0" />
@@ -690,7 +807,7 @@ export default function ProductsPage() {
                         }`}
                       >
                         <ChevronLeft className="w-4 h-4" />
-                        <span className="hidden sm:inline">Sebelumnya</span>
+                        <span className="hidden sm:inline">{copy.prev}</span>
                       </button>
                       
                       <div className="flex items-center gap-1">
@@ -727,7 +844,7 @@ export default function ProductsPage() {
                           theme === "dark" ? "bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600" : "bg-white hover:bg-gray-50"
                         }`}
                       >
-                        <span className="hidden sm:inline">Selanjutnya</span>
+                        <span className="hidden sm:inline">{copy.next}</span>
                         <ChevronRight className="w-4 h-4" />
                       </button>
                     </div>
@@ -737,7 +854,7 @@ export default function ProductsPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <Badge variant="outline" className="text-xs">
-                      Halaman {currentPage}/{totalPages || 1} • {products.length} produk
+                      {copy.page} {currentPage}/{totalPages || 1} | {products.length} {copy.products}
                     </Badge>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -779,7 +896,7 @@ export default function ProductsPage() {
                                       onClick={(e) => handleConfirmDelete(product.id, e)}
                                       className="px-2 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors"
                                     >
-                                      Hapus
+                                      {copy.delete}
                                     </button>
                                     <button
                                       onClick={handleCancelDelete}
@@ -787,7 +904,7 @@ export default function ProductsPage() {
                                         theme === "dark" ? "text-gray-300 bg-gray-700 hover:bg-gray-600" : "text-gray-600 bg-gray-100 hover:bg-gray-200"
                                       }`}
                                     >
-                                      Batal
+                                      {copy.cancel}
                                     </button>
                                   </>
                                 )}
@@ -798,7 +915,7 @@ export default function ProductsPage() {
                                 className={`p-1.5 hover:text-red-600 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${
                                   theme === "dark" ? "text-gray-500 hover:bg-red-900/30" : "text-gray-400 hover:bg-red-50"
                                 }`}
-                                title="Hapus produk"
+                                title={copy.deleteTitle}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -810,7 +927,7 @@ export default function ProductsPage() {
                           <div className="flex items-center gap-2">
                             {getMomentumIcon(product.analytics?.momentum_label)}
                             <span className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
-                              {product.totalSales7d} sold (7d)
+                              {product.totalSales7d} {copy.sold7d}
                             </span>
                           </div>
                           {getMomentumBadge(product.analytics?.momentum_label, product.analytics?.momentum_combined)}
@@ -836,7 +953,7 @@ export default function ProductsPage() {
                         }`}
                       >
                         <ChevronLeft className="w-4 h-4" />
-                        Prev
+                        {copy.prev}
                       </button>
                       
                       <span className={`px-4 py-2 text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
@@ -850,7 +967,7 @@ export default function ProductsPage() {
                           theme === "dark" ? "bg-gray-800 border-gray-700 text-gray-200 hover:bg-gray-700" : "bg-white hover:bg-gray-50"
                         }`}
                       >
-                        Next
+                        {copy.next}
                         <ChevronRight className="w-4 h-4" />
                       </button>
                     </div>

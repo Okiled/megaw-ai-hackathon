@@ -1,609 +1,275 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertCircle, Calendar, CheckCircle, FileSpreadsheet, FolderOpen, History, Minus, Package, Plus, Save, Upload } from "lucide-react";
 import Navbar from "@/components/ui/Navbar";
-import { Card, CardContent, CardHeader } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { FolderOpen, Calendar, Package, Save, CheckCircle, AlertCircle, Minus, Plus, Upload, FileSpreadsheet, Info, History, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { API_URL } from "@/lib/api";
-import { getToken, getAuthHeaders, requireAuth } from "@/lib/auth";
+import { getAuthHeaders, getToken, requireAuth } from "@/lib/auth";
 import { logger } from "@/lib/logger";
-import { useTheme } from "@/lib/theme-context"; 
+import { useTheme } from "@/lib/theme-context";
+import { useLanguage } from "@/lib/language-context";
 
-interface Product {
-  id: string;
-  name: string;
-  unit?: string;
-  price?: number;
-}
-
-interface SalesEntry {
-  product_id: string;
-  product_name: string;
-  quantity: number;
-}
+type Product = { id: string; name: string; unit?: string; price?: number };
+type HistoryRow = { date: string; product_name: string; quantity: number; unit_price?: number | null; revenue?: number | null };
 
 function getTodayDate() {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 export default function InputPage() {
   const router = useRouter();
   const { theme } = useTheme();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [saleDate, setSaleDate] = useState<string>("");
-  const [entries, setEntries] = useState<Record<string, number>>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
-  const [salesHistory, setSalesHistory] = useState<Array<{date: string, product_name: string, quantity: number, unit_price?: number | null, revenue?: number | null}>>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { language, locale } = useLanguage();
+  const copy = language === "en"
+    ? {
+        title: "Daily Sales Input", subtitle: "Enter sold quantities for each product", saleDate: "Sales Date",
+        upload: "Upload Sales Data", chooseFile: "Choose File", saveAll: "Save All", summary: "Input Summary",
+        history: "Latest Sales History", products: "Product List", noProducts: "No products yet", addProduct: "Add Product",
+        important: "Products must be registered before sales data can be processed.", tips: "For better AI results, upload at least 30 consecutive days of sales data.",
+        loadProducts: "Loading product list...", totalItems: "total items", unsupported: "Unsupported file format.",
+        uploading: "Uploading file...", uploadDone: "File uploaded successfully.", uploadFail: "Failed to upload file",
+        futureDate: "Date cannot be in the future", oldDate: "Date cannot be older than 1 year",
+        sessionExpired: "Session expired. Please sign in again.", needOne: "Enter at least one product with quantity above 0",
+        saved: (count: number) => `${count} products saved successfully.`, records: (count: number) => `${count} records`,
+      }
+    : {
+        title: "Input Penjualan Harian", subtitle: "Masukkan jumlah terjual untuk setiap produk", saleDate: "Tanggal Penjualan",
+        upload: "Upload Data Penjualan", chooseFile: "Pilih File", saveAll: "Simpan Semua", summary: "Ringkasan Input",
+        history: "Riwayat Penjualan Terbaru", products: "Daftar Produk", noProducts: "Belum ada produk", addProduct: "Tambah Produk",
+        important: "Produk harus didaftarkan terlebih dahulu agar data penjualan bisa diproses.", tips: "Untuk hasil AI lebih baik, upload minimal 30 hari data penjualan berturut-turut.",
+        loadProducts: "Memuat daftar produk...", totalItems: "total item", unsupported: "Format file tidak didukung.",
+        uploading: "Mengupload file...", uploadDone: "File berhasil diupload.", uploadFail: "Gagal upload file",
+        futureDate: "Tanggal tidak boleh di masa depan", oldDate: "Tanggal tidak boleh lebih dari 1 tahun lalu",
+        sessionExpired: "Session habis. Login ulang.", needOne: "Isi minimal 1 produk dengan quantity lebih dari 0",
+        saved: (count: number) => `${count} produk berhasil disimpan.`, records: (count: number) => `${count} data`,
+      };
 
-  // Check auth on mount
+  const [products, setProducts] = useState<Product[]>([]);
+  const [entries, setEntries] = useState<Record<string, number>>({});
+  const [saleDate, setSaleDate] = useState(getTodayDate());
+  const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
-    if (!requireAuth(router)) {
-      return;
-    }
+    if (!requireAuth(router)) return;
     setIsAuthenticated(true);
-    setIsMounted(true);
-    setSaleDate(getTodayDate());
   }, [router]);
 
   useEffect(() => {
-    if (!isMounted) return;
-    
-    const fetchProducts = async () => {
-      setIsLoading(true);
+    if (!isAuthenticated) return;
+    const load = async () => {
+      setLoading(true);
       try {
-        if (!requireAuth(router)) return;
-
-        const res = await fetch(`${API_URL}/api/products`, {
-          headers: getAuthHeaders()
-        });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        const result = await res.json();
-        
-        if (result.success && Array.isArray(result.data)) {
-          setProducts(result.data);
-          // Initialize all entries to 0
+        const [productsRes, historyRes] = await Promise.all([
+          fetch(`${API_URL}/api/products`, { headers: getAuthHeaders() }),
+          fetch(`${API_URL}/api/sales/history?limit=20`, { headers: getAuthHeaders() }),
+        ]);
+        const productsJson = await productsRes.json();
+        const historyJson = await historyRes.json();
+        if (productsJson.success) {
+          setProducts(productsJson.data || []);
           const initial: Record<string, number> = {};
-          result.data.forEach((p: Product) => {
-            initial[p.id] = 0;
+          (productsJson.data || []).forEach((product: Product) => {
+            initial[product.id] = 0;
           });
           setEntries(initial);
         }
+        if (historyJson.success) setHistory(historyJson.data || []);
       } catch (err) {
-        logger.error("Gagal load produk", err);
+        logger.error("Input page load failed", err);
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
+    load();
+  }, [isAuthenticated]);
 
-    const fetchHistory = async () => {
-      try {
-        const token = getToken();
-        if (!token) return;
-
-        const res = await fetch(`${API_URL}/api/sales/history?limit=20`, {
-          headers: getAuthHeaders()
-        });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        const result = await res.json();
-        
-        if (result.success && Array.isArray(result.data)) {
-          setSalesHistory(result.data);
-        }
-      } catch (err) {
-        logger.error("Gagal load history", err);
-      }
-    };
-
-    fetchProducts();
-    fetchHistory();
-  }, [isMounted, router]); 
-
-  const fetchSalesHistory = async () => {
-    try {
-      const token = getToken();
-      if (!token) return;
-
-      const res = await fetch(`${API_URL}/api/sales/history?limit=20`, {
-        headers: getAuthHeaders()
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const result = await res.json();
-      
-      if (result.success && Array.isArray(result.data)) {
-        setSalesHistory(result.data);
-      }
-    } catch (err) {
-      logger.error("Gagal load history", err);
-    }
+  const validateDate = () => {
+    const selected = new Date(saleDate);
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    if (selected > today) return copy.futureDate;
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    if (selected < oneYearAgo) return copy.oldDate;
+    return null;
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
-
-    const allowedTypes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
-      'application/vnd.ms-excel', // xls
-      'text/csv',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
-    ];
-
-    if (!allowedTypes.includes(file.type) && !file.name.endsWith('.csv')) {
-      setMessage({ type: 'error', text: 'Format file tidak didukung. Gunakan Excel (.xlsx, .xls), CSV, atau Word (.docx)' });
+    if (!/(\.xlsx|\.xls|\.csv|\.docx)$/i.test(file.name)) {
+      setMessage({ type: "error", text: copy.unsupported });
       return;
     }
-
-    // Check file size - warn for large files
-    const fileSizeMB = file.size / (1024 * 1024);
-    if (fileSizeMB > 10) {
-      const confirm = window.confirm(`File berukuran ${fileSizeMB.toFixed(1)}MB. File besar akan membutuhkan waktu lebih lama. Lanjutkan?`);
-      if (!confirm) return;
-    }
-
-    setIsUploading(true);
-    setUploadProgress(0);
-    setMessage({ type: 'success', text: 'Mengupload file...' });
-
-    // Progress simulation based on file size
-    const estimatedTime = Math.max(5000, fileSizeMB * 3000); // ~3s per MB
-    const increment = Math.max(1, Math.round(90 / (estimatedTime / 200)));
-    const progressInterval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 90) return 90;
-        return Math.min(90, prev + increment);
-      });
-    }, 200);
-
+    setUploading(true);
+    setMessage({ type: "success", text: copy.uploading });
     try {
       const token = getToken();
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('sale_date', saleDate);
-
-      // Extended timeout for large files - 5 minutes
-      const controller = new AbortController();
-      const timeoutMs = Math.max(300000, fileSizeMB * 30000); // Min 5min or 30s per MB
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
+      formData.append("file", file);
+      formData.append("sale_date", saleDate);
       const res = await fetch(`${API_URL}/api/sales/upload`, {
-        method: 'POST',
+        method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
-        signal: controller.signal
       });
-
-      clearTimeout(timeoutId);
-      clearInterval(progressInterval);
-      setUploadProgress(95);
-
-      const result = await res.json();
-      setUploadProgress(100);
-
-      if (result.success) {
-        setMessage({ type: 'success', text: `Berhasil! ${result.processed || 0} data diproses dalam background.` });
-        // Delay refresh to let background processing complete
-        setTimeout(() => fetchSalesHistory(), 2000);
-      } else {
-        setMessage({ type: 'error', text: result.error || 'Gagal upload file' });
-      }
+      const data = await res.json();
+      setMessage({ type: data.success ? "success" : "error", text: data.success ? copy.uploadDone : data.error || copy.uploadFail });
     } catch (err: unknown) {
-      clearInterval(progressInterval);
-      if (err instanceof Error && err.name === 'AbortError') {
-        setMessage({ type: 'error', text: 'Upload timeout - coba lagi atau pecah file menjadi bagian lebih kecil' });
-      } else {
-        setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal upload file' });
-      }
+      setMessage({ type: "error", text: err instanceof Error ? err.message : copy.uploadFail });
     } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  };
-
-  const MAX_QUANTITY = 99999;
-
-  const handleQuantityChange = (productId: string, value: number) => {
-    // Validate: only positive numbers, max limit
-    const validValue = Math.max(0, Math.min(MAX_QUANTITY, Math.floor(value) || 0));
-    setEntries(prev => ({
-      ...prev,
-      [productId]: validValue
-    }));
-  };
-
-  const validateDate = (dateStr: string): boolean => {
-    const selectedDate = new Date(dateStr);
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    
-    // Don't allow future dates
-    if (selectedDate > today) {
-      setMessage({ type: 'error', text: 'Tanggal tidak boleh di masa depan' });
-      return false;
-    }
-    
-    // Don't allow dates more than 1 year ago
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    if (selectedDate < oneYearAgo) {
-      setMessage({ type: 'error', text: 'Tanggal tidak boleh lebih dari 1 tahun lalu' });
-      return false;
-    }
-    
-    return true;
-  };
-
-  const incrementQuantity = (productId: string) => {
-    setEntries(prev => ({
-      ...prev,
-      [productId]: Math.min((prev[productId] || 0) + 1, MAX_QUANTITY)
-    }));
-  };
-
-  const decrementQuantity = (productId: string) => {
-    setEntries(prev => ({
-      ...prev,
-      [productId]: Math.max(0, (prev[productId] || 0) - 1)
-    }));
   };
 
   const handleSubmit = async () => {
-    setIsSubmitting(true);
+    setSubmitting(true);
     setMessage(null);
-
     try {
       const token = getToken();
       if (!token) {
-        setMessage({ type: 'error', text: 'Session habis. Login ulang!' });
-        setIsSubmitting(false);
+        setMessage({ type: "error", text: copy.sessionExpired });
         return;
       }
-
-      // Validate date
-      if (!validateDate(saleDate)) {
-        setIsSubmitting(false);
+      const dateError = validateDate();
+      if (dateError) {
+        setMessage({ type: "error", text: dateError });
         return;
       }
-
-      // Prepare entries data with max limit check
-      const salesEntries: SalesEntry[] = products
-        .filter(p => entries[p.id] > 0)
-        .map(p => ({
-          product_id: p.id,
-          product_name: p.name,
-          quantity: Math.min(entries[p.id], MAX_QUANTITY)
-        }));
-
-      if (salesEntries.length === 0) {
-        setMessage({ type: 'error', text: 'Isi minimal 1 produk dengan quantity > 0' });
-        setIsSubmitting(false);
+      const payload = products
+        .filter((product) => (entries[product.id] || 0) > 0)
+        .map((product) => ({ product_id: product.id, product_name: product.name, quantity: entries[product.id] || 0 }));
+      if (!payload.length) {
+        setMessage({ type: "error", text: copy.needOne });
         return;
       }
-
-      // Warn for high quantities
-      const hasHighQty = salesEntries.some(e => e.quantity > 10000);
-      if (hasHighQty) {
-        const confirmHigh = window.confirm('Ada quantity > 10.000. Yakin data sudah benar?');
-        if (!confirmHigh) {
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
       const res = await fetch(`${API_URL}/api/sales/bulk`, {
         method: "POST",
         headers: getAuthHeaders(),
-        body: JSON.stringify({
-          sale_date: saleDate,
-          entries: salesEntries
-        })
+        body: JSON.stringify({ sale_date: saleDate, entries: payload }),
       });
-
       const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || "Gagal menyimpan");
-      }
-
-      setMessage({ 
-        type: 'success', 
-        text: `✅ ${salesEntries.length} produk berhasil disimpan!` 
-      });
-
-      // Reset entries to 0
-      const resetEntries: Record<string, number> = {};
-      products.forEach(p => {
-        resetEntries[p.id] = 0;
-      });
-      setEntries(resetEntries);
-
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err.message || 'Terjadi kesalahan' });
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setMessage({ type: "success", text: copy.saved(payload.length) });
+      const reset: Record<string, number> = {};
+      products.forEach((product) => { reset[product.id] = 0; });
+      setEntries(reset);
+    } catch (err: unknown) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
   };
 
-  const totalProducts = Object.values(entries).filter(v => v > 0).length;
-  const totalQuantity = Object.values(entries).reduce((a, b) => a + b, 0);
+  const totalProducts = Object.values(entries).filter((value) => value > 0).length;
+  const totalQuantity = Object.values(entries).reduce((sum, value) => sum + value, 0);
 
   if (!isAuthenticated) {
-    return (
-      <div className={`min-h-screen flex items-center justify-center ${theme === "dark" ? "bg-gray-900" : "bg-gray-50"}`}>
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-      </div>
-    );
+    return <div className={`flex min-h-screen items-center justify-center ${theme === "dark" ? "bg-gray-900" : "bg-gray-50"}`}><div className="h-8 w-8 animate-spin rounded-full border-b-2 border-red-600" /></div>;
   }
 
   return (
-    <main className={`min-h-screen selection:bg-[#DC2626] selection:text-white transition-colors duration-300 ${
-      theme === "dark" ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-black"
-    }`}>
+    <main className={`min-h-screen transition-colors duration-300 ${theme === "dark" ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-black"}`}>
       <Navbar />
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="mb-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className={`p-2 rounded-lg ${theme === "dark" ? "bg-red-900/30" : "bg-red-100"}`}>
-              <FolderOpen className="text-[#DC2626]" size={24} />
-            </div>
-            <div>
-              <h1 className={`text-xl font-bold tracking-tight ${theme === "dark" ? "text-white" : "text-black"}`}>
-                Input Penjualan Harian
-              </h1>
-              <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
-                Masukkan jumlah terjual untuk setiap produk
-              </p>
-            </div>
+      <div className="mx-auto max-w-4xl px-4 py-8">
+        <div className="mb-6 flex items-center gap-3">
+          <div className={`rounded-lg p-2 ${theme === "dark" ? "bg-red-900/30" : "bg-red-100"}`}><FolderOpen className="text-[#DC2626]" size={24} /></div>
+          <div>
+            <h1 className={`text-xl font-bold ${theme === "dark" ? "text-white" : "text-black"}`}>{copy.title}</h1>
+            <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.subtitle}</p>
           </div>
         </div>
 
-        <div className={`mb-4 p-4 border rounded-xl flex items-start gap-3 ${
-          theme === "dark" ? "bg-amber-900/20 border-amber-800" : "bg-amber-50 border-amber-200"
-        }`}>
-          <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${theme === "dark" ? "text-amber-400" : "text-amber-600"}`} />
-          <div>
-            <p className={`font-medium text-sm ${theme === "dark" ? "text-amber-300" : "text-amber-800"}`}>Penting: Daftarkan Produk Terlebih Dahulu</p>
-            <p className={`text-sm mt-1 ${theme === "dark" ? "text-amber-400/80" : "text-amber-700"}`}>
-              Sebelum input data penjualan, pastikan semua produk sudah didaftarkan di{' '}
-              <a href="/products" className={`underline font-medium ${theme === "dark" ? "hover:text-amber-300" : "hover:text-amber-900"}`}>
-                halaman Products
-              </a>
-              . Data penjualan hanya akan diproses untuk produk yang sudah terdaftar.
-            </p>
-          </div>
+        <div className={`mb-4 flex items-start gap-3 rounded-xl border p-4 ${theme === "dark" ? "border-amber-800 bg-amber-900/20" : "border-amber-200 bg-amber-50"}`}>
+          <AlertCircle className={`mt-0.5 h-5 w-5 ${theme === "dark" ? "text-amber-400" : "text-amber-600"}`} />
+          <p className={`text-sm ${theme === "dark" ? "text-amber-300" : "text-amber-800"}`}>{copy.important}</p>
         </div>
 
-        <div className={`mb-6 p-4 border rounded-xl flex items-start gap-3 ${
-          theme === "dark" ? "bg-blue-900/20 border-blue-800" : "bg-blue-50 border-blue-200"
-        }`}>
-          <Info className={`w-5 h-5 mt-0.5 flex-shrink-0 ${theme === "dark" ? "text-blue-400" : "text-blue-600"}`} />
-          <div>
-            <p className={`font-medium text-sm ${theme === "dark" ? "text-blue-300" : "text-blue-800"}`}>Tips untuk hasil AI yang optimal</p>
-            <p className={`text-sm mt-1 ${theme === "dark" ? "text-blue-400/80" : "text-blue-600"}`}>
-              Disarankan input data penjualan minimal <strong>30 hari berturut-turut</strong> agar AI dapat menganalisis pola dan memberikan prediksi yang lebih akurat.
-            </p>
-          </div>
+        <div className={`mb-6 flex items-start gap-3 rounded-xl border p-4 ${theme === "dark" ? "border-blue-800 bg-blue-900/20" : "border-blue-200 bg-blue-50"}`}>
+          <AlertCircle className={`mt-0.5 h-5 w-5 ${theme === "dark" ? "text-blue-400" : "text-blue-600"}`} />
+          <p className={`text-sm ${theme === "dark" ? "text-blue-300" : "text-blue-800"}`}>{copy.tips}</p>
         </div>
 
         <Card className="mb-6 border-l-4 border-l-green-500">
           <CardContent className="p-4">
-            <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <FileSpreadsheet className={`w-5 h-5 ${theme === "dark" ? "text-green-400" : "text-green-600"}`} />
-                <div>
-                  <p className={`font-medium ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Upload Data Penjualan</p>
-                  <p className={`text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-500"}`}>Excel (.xlsx), CSV, atau Word (.docx)</p>
-                  <p className={`text-xs mt-1 ${theme === "dark" ? "text-gray-400" : "text-gray-400"}`}>
-                    Kolom fleksibel: tanggal/date/tgl, nama/produk/menu, qty/jumlah/terjual, harga/price
-                  </p>
-                </div>
+                <FileSpreadsheet className={`h-5 w-5 ${theme === "dark" ? "text-green-400" : "text-green-600"}`} />
+                <p className={`font-medium ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{copy.upload}</p>
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv,.docx"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  id="file-upload"
-                />
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                >
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Uploading... {Math.round(uploadProgress)}%
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Pilih File
-                    </>
-                  )}
+              <div>
+                <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.docx" className="hidden" onChange={handleUpload} />
+                <Button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="bg-green-600 text-white hover:bg-green-700">
+                  <Upload className="mr-2 h-4 w-4" /> {copy.chooseFile}
                 </Button>
               </div>
             </div>
-            {isUploading && (
-              <div className="mt-3">
-                <div className={`h-2 rounded-full overflow-hidden ${theme === "dark" ? "bg-gray-700" : "bg-gray-200"}`}>
-                  <div 
-                    className="h-full bg-green-500 transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
           </CardContent>
         </Card>
 
         <Card className="mb-6 border-l-4 border-l-red-500">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Calendar className={`w-5 h-5 ${theme === "dark" ? "text-white" : "text-gray-500"}`} style={theme === "dark" ? { color: "white" } : {}} />
-                <div>
-                  <p className={`text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-500"}`}>Tanggal Penjualan</p>
-                  {saleDate ? (
-                    <input
-                      type="date"
-                      value={saleDate}
-                      onChange={(e) => setSaleDate(e.target.value)}
-                      style={theme === "dark" ? { colorScheme: "dark" } : {}}
-                      className={`font-bold text-lg bg-transparent border-none focus:outline-none cursor-pointer ${
-                        theme === "dark" ? "text-white" : "text-gray-900"
-                      }`}
-                    />
-                  ) : (
-                    <div className={`h-7 w-32 rounded animate-pulse ${theme === "dark" ? "bg-gray-700" : "bg-gray-100"}`} />
-                  )}
-                </div>
+          <CardContent className="flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              <Calendar className={`h-5 w-5 ${theme === "dark" ? "text-white" : "text-gray-500"}`} />
+              <div>
+                <p className={`text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-500"}`}>{copy.saleDate}</p>
+                <input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} className={`bg-transparent text-lg font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`} />
               </div>
-              {saleDate ? (
-                <Badge variant="secondary" className={theme === "dark" ? "bg-red-900/40 text-red-400" : "bg-red-50 text-red-700"}>
-                  {new Date(saleDate + 'T00:00:00').toLocaleDateString('id-ID', { 
-                    weekday: 'long', 
-                    day: 'numeric', 
-                    month: 'long' 
-                  })}
-                </Badge>
-              ) : (
-                <div className={`h-6 w-28 rounded animate-pulse ${theme === "dark" ? "bg-gray-700" : "bg-gray-100"}`} />
-              )}
             </div>
+            <Badge variant="secondary">{new Date(`${saleDate}T00:00:00`).toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long" })}</Badge>
           </CardContent>
         </Card>
 
         {message && (
-          <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 ${
-            message.type === 'success' 
-              ? theme === "dark" ? 'bg-green-900/40 border border-green-700 text-green-300' : 'bg-green-50 border border-green-200 text-green-700'
-              : theme === "dark" ? 'bg-red-900/40 border border-red-700 text-red-300' : 'bg-red-50 border border-red-200 text-red-700'
+          <div className={`mb-6 flex items-center gap-3 rounded-xl p-4 ${
+            message.type === "success"
+              ? theme === "dark" ? "border border-green-700 bg-green-900/40 text-green-300" : "border border-green-200 bg-green-50 text-green-700"
+              : theme === "dark" ? "border border-red-700 bg-red-900/40 text-red-300" : "border border-red-200 bg-red-50 text-red-700"
           }`}>
-            {message.type === 'success' ? 
-              <CheckCircle className="w-5 h-5" /> : 
-              <AlertCircle className="w-5 h-5" />
-            }
-            <span className="font-medium">{message.text}</span>
+            {message.type === "success" ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+            <span>{message.text}</span>
           </div>
         )}
 
         <Card>
           <CardHeader className={`border-b ${theme === "dark" ? "bg-gray-800" : "bg-gray-50"}`}>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Package className={`w-5 h-5 ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`} />
-                <h3 className={`font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Daftar Produk</h3>
-              </div>
-              <Badge variant="outline">
-                {products.length} produk
-              </Badge>
+              <div className="flex items-center gap-2"><Package className="h-5 w-5" /><h3 className="font-bold">{copy.products}</h3></div>
+              <Badge variant="outline">{products.length}</Badge>
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-12 space-y-4">
-                <div className={`w-8 h-8 border-2 border-t-[#DC2626] rounded-full animate-spin ${theme === "dark" ? "border-gray-700" : "border-gray-200"}`}></div>
-                <p className={`text-sm font-medium ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
-                  Memuat daftar produk...
-                </p>
-              </div>
-            ) : products.length === 0 ? (
-              <div className="text-center py-12">
-                <Package className={`w-12 h-12 mx-auto mb-3 ${theme === "dark" ? "text-gray-600" : "text-gray-300"}`} />
-                <p className={`font-medium ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>Belum ada produk</p>
-                <p className={`text-sm ${theme === "dark" ? "text-gray-500" : "text-gray-400"}`}>Tambahkan produk terlebih dahulu</p>
-                <Button 
-                  className="mt-4 bg-red-600 hover:bg-red-700"
-                  onClick={() => router.push('/products')}
-                >
-                  Tambah Produk
-                </Button>
+            {loading ? (
+              <div className="py-12 text-center"><p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.loadProducts}</p></div>
+            ) : !products.length ? (
+              <div className="py-12 text-center">
+                <p className={`font-medium ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.noProducts}</p>
+                <Button className="mt-4 bg-red-600 hover:bg-red-700" onClick={() => router.push("/products")}>{copy.addProduct}</Button>
               </div>
             ) : (
               <div className={`divide-y ${theme === "dark" ? "divide-gray-700" : "divide-gray-100"}`}>
                 {products.map((product) => (
-                  <div 
-                    key={product.id} 
-                    className={`p-4 flex items-center justify-between transition-colors ${
-                      entries[product.id] > 0 
-                        ? theme === "dark" ? 'bg-green-900/30' : 'bg-green-50/50'
-                        : theme === "dark" ? 'hover:bg-gray-800' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <h4 className={`font-semibold truncate ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
-                        {product.name}
-                      </h4>
-                      <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
-                        {product.unit || 'pcs'}
-                        {product.price ? ` • Rp ${product.price.toLocaleString('id-ID')}` : ''}
-                      </p>
+                  <div key={product.id} className="flex items-center justify-between p-4">
+                    <div className="min-w-0 flex-1">
+                      <h4 className={`truncate font-semibold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{product.name}</h4>
+                      <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{product.unit || "pcs"}</p>
                     </div>
-
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => decrementQuantity(product.id)}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-                          theme === "dark" ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-100 hover:bg-gray-200"
-                        }`}
-                        disabled={entries[product.id] <= 0}
-                      >
-                        <Minus className={`w-4 h-4 ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`} />
-                      </button>
-                      
-                      <input
-                        type="number"
-                        value={entries[product.id] > 0 ? entries[product.id] : ''}
-                        placeholder="0"
-                        onChange={(e) => handleQuantityChange(product.id, parseInt(e.target.value) || 0)}
-                        className={`w-20 h-12 text-center text-xl font-bold rounded-lg border-2 transition-colors
-                          [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none
-                          ${theme === "dark" 
-                            ? entries[product.id] > 0 
-                              ? 'border-green-600 bg-green-900/50 text-white placeholder:text-gray-600' 
-                              : 'border-gray-600 bg-gray-800 text-white placeholder:text-gray-600'
-                            : entries[product.id] > 0 
-                              ? 'border-green-300 bg-green-50 text-green-700 placeholder:text-gray-300' 
-                              : 'border-gray-200 bg-white text-gray-900 placeholder:text-gray-300'
-                          }`}
-                        min="0"
-                      />
-                      
-                      <button
-                        type="button"
-                        onClick={() => incrementQuantity(product.id)}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-                          theme === "dark" ? "bg-red-900/50 hover:bg-red-900/70" : "bg-red-100 hover:bg-red-200"
-                        }`}
-                      >
-                        <Plus className={`w-4 h-4 ${theme === "dark" ? "text-red-400" : "text-red-600"}`} />
-                      </button>
+                      <button type="button" onClick={() => setEntries((prev) => ({ ...prev, [product.id]: Math.max(0, (prev[product.id] || 0) - 1) }))} className={`flex h-10 w-10 items-center justify-center rounded-full ${theme === "dark" ? "bg-gray-700" : "bg-gray-100"}`}><Minus className="h-4 w-4" /></button>
+                      <input type="number" value={entries[product.id] > 0 ? entries[product.id] : ""} placeholder="0" onChange={(e) => setEntries((prev) => ({ ...prev, [product.id]: Math.max(0, parseInt(e.target.value || "0", 10) || 0) }))} className={`h-12 w-20 rounded-lg border text-center text-lg font-bold ${theme === "dark" ? "border-gray-600 bg-gray-800 text-white" : "border-gray-200 bg-white text-gray-900"}`} />
+                      <button type="button" onClick={() => setEntries((prev) => ({ ...prev, [product.id]: (prev[product.id] || 0) + 1 }))} className={`flex h-10 w-10 items-center justify-center rounded-full ${theme === "dark" ? "bg-red-900/50" : "bg-red-100"}`}><Plus className="h-4 w-4 text-red-600" /></button>
                     </div>
                   </div>
                 ))}
@@ -612,86 +278,52 @@ export default function InputPage() {
           </CardContent>
         </Card>
 
-        {products.length > 0 && (
-          <Card className="mt-6 border-t-4 border-t-green-500">
-            <CardContent className="p-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <p className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>Ringkasan Input</p>
-                  <div className="flex items-center gap-4">
-                    <div>
-                      <span className={`text-2xl font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{totalProducts}</span>
-                      <span className={`text-sm ml-1 ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>produk</span>
-                    </div>
-                    <div className={`w-px h-6 ${theme === "dark" ? "bg-gray-700" : "bg-gray-200"}`}></div>
-                    <div>
-                      <span className={`text-2xl font-bold ${theme === "dark" ? "text-green-400" : "text-green-600"}`}>{totalQuantity}</span>
-                      <span className={`text-sm ml-1 ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>total item</span>
-                    </div>
-                  </div>
+        <Card className="mt-6 border-t-4 border-t-green-500">
+          <CardContent className="p-6">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+              <div>
+                <p className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.summary}</p>
+                <div className="flex items-center gap-4">
+                  <div><span className="text-2xl font-bold">{totalProducts}</span></div>
+                  <div><span className="text-2xl font-bold">{totalQuantity}</span> <span className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.totalItems}</span></div>
                 </div>
-
-                <Button
-                  onClick={handleSubmit}
-                  disabled={totalProducts === 0 || isSubmitting}
-                  isLoading={isSubmitting}
-                  className={`px-6 py-2.5 text-sm font-bold shadow-lg transition-all ${
-                    totalProducts > 0 
-                      ? 'bg-green-600 hover:bg-green-700 text-white' 
-                      : theme === "dark" ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  }`}
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  Simpan Semua
-                </Button>
               </div>
-            </CardContent>
-          </Card>
-        )}
+              <Button onClick={handleSubmit} disabled={submitting} isLoading={submitting} className="bg-green-600 text-white hover:bg-green-700">
+                <Save className="mr-2 h-4 w-4" /> {copy.saveAll}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-        {salesHistory.length > 0 && (
+        {history.length > 0 && (
           <Card className="mt-8">
             <CardHeader className={`border-b ${theme === "dark" ? "bg-gray-800" : "bg-gray-50"}`}>
               <div className="flex items-center gap-2">
-                <History className={`w-5 h-5 ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`} />
-                <h3 className={`font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Riwayat Penjualan Terbaru</h3>
-                <Badge variant="outline" className="ml-auto">{salesHistory.length} data</Badge>
+                <History className="h-5 w-5" />
+                <h3 className="font-bold">{copy.history}</h3>
+                <Badge variant="outline" className="ml-auto">{copy.records(history.length)}</Badge>
               </div>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className={`border-b ${theme === "dark" ? "bg-gray-800" : "bg-gray-50"}`}>
+                  <thead className={theme === "dark" ? "bg-gray-800" : "bg-gray-50"}>
                     <tr>
-                      <th className={`text-left py-3 px-4 font-semibold text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>Tanggal</th>
-                      <th className={`text-left py-3 px-4 font-semibold text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>Produk</th>
-                      <th className={`text-right py-3 px-4 font-semibold text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>Qty</th>
-                      <th className={`text-right py-3 px-4 font-semibold text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>Harga Satuan</th>
-                      <th className={`text-right py-3 px-4 font-semibold text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>Total</th>
+                      <th className="px-4 py-3 text-left text-sm">Tanggal</th>
+                      <th className="px-4 py-3 text-left text-sm">Produk</th>
+                      <th className="px-4 py-3 text-right text-sm">Qty</th>
+                      <th className="px-4 py-3 text-right text-sm">Harga</th>
+                      <th className="px-4 py-3 text-right text-sm">Total</th>
                     </tr>
                   </thead>
                   <tbody className={`divide-y ${theme === "dark" ? "divide-gray-700" : "divide-gray-100"}`}>
-                    {salesHistory.map((sale, idx) => (
-                      <tr key={idx} className={`transition-colors ${theme === "dark" ? "hover:bg-gray-800" : "hover:bg-gray-50"}`}>
-                        <td className={`py-3 px-4 text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
-                          {new Date(sale.date).toLocaleDateString('id-ID', {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric'
-                          })}
-                        </td>
-                        <td className={`py-3 px-4 text-sm font-medium ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{sale.product_name}</td>
-                        <td className="py-3 px-4 text-sm text-right">
-                          <Badge variant="secondary" className={theme === "dark" ? "bg-blue-900/40 text-blue-400" : "bg-blue-50 text-blue-700"}>
-                            {sale.quantity}
-                          </Badge>
-                        </td>
-                        <td className={`py-3 px-4 text-sm text-right ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>
-                          {sale.unit_price ? `Rp ${sale.unit_price.toLocaleString('id-ID')}` : '-'}
-                        </td>
-                        <td className={`py-3 px-4 text-sm text-right font-medium ${theme === "dark" ? "text-green-400" : "text-green-600"}`}>
-                          {sale.revenue ? `Rp ${sale.revenue.toLocaleString('id-ID')}` : '-'}
-                        </td>
+                    {history.map((row, idx) => (
+                      <tr key={idx}>
+                        <td className="px-4 py-3 text-sm">{new Date(row.date).toLocaleDateString(locale)}</td>
+                        <td className="px-4 py-3 text-sm">{row.product_name}</td>
+                        <td className="px-4 py-3 text-right text-sm">{row.quantity}</td>
+                        <td className="px-4 py-3 text-right text-sm">{row.unit_price ? new Intl.NumberFormat(locale, { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(row.unit_price) : "-"}</td>
+                        <td className="px-4 py-3 text-right text-sm">{row.revenue ? new Intl.NumberFormat(locale, { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(row.revenue) : "-"}</td>
                       </tr>
                     ))}
                   </tbody>

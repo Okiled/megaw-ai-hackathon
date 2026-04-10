@@ -12,10 +12,11 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   options: SelectOption[];
   error?: string;
+  placeholder?: string;
 }
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, label, options, error, ...props }, ref) => {
+  ({ className, label, options, error, placeholder = "Pilih satuan...", ...props }, ref) => {
     const { theme } = useTheme();
     
     return (
@@ -40,7 +41,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             ref={ref}
             {...props}
           >
-            <option value="" disabled className={theme === "dark" ? "bg-gray-800" : ""}>Pilih satuan...</option>
+            <option value="" disabled className={theme === "dark" ? "bg-gray-800" : ""}>{placeholder}</option>
             {options.map((option) => (
               <option key={option.value} value={option.value} className={theme === "dark" ? "bg-gray-800" : ""}>
                 {option.label}

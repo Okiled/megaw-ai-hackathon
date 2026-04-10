@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, createContext, useContext, ReactNode } from "react";
+import { useRef, useState, createContext, useContext, ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, AlertTriangle, TrendingUp, Bell, Flame } from "lucide-react";
 import { useTheme } from "@/lib/theme-context";
+import { useLanguage } from "@/lib/language-context";
 
 interface Notification {
   id: string;
@@ -35,9 +36,15 @@ export function useNotification() {
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const counterRef = useRef(0);
+
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
 
   const addNotification = (notification: Omit<Notification, "id" | "timestamp">) => {
-    const id = `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    counterRef.current += 1;
+    const id = `notif-${counterRef.current}`;
     const newNotification: Notification = {
       ...notification,
       id,
@@ -50,10 +57,6 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     setTimeout(() => {
       removeNotification(id);
     }, 8000);
-  };
-
-  const removeNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
   const clearAll = () => {
@@ -71,6 +74,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 function NotificationContainer() {
   const { notifications, removeNotification } = useNotification();
   const { theme } = useTheme();
+  const { language } = useLanguage();
 
   return (
     <div className="fixed top-20 right-4 z-[100] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
@@ -88,6 +92,7 @@ function NotificationContainer() {
               notification={notification} 
               onClose={() => removeNotification(notification.id)}
               theme={theme}
+              language={language}
             />
           </motion.div>
         ))}
@@ -99,12 +104,16 @@ function NotificationContainer() {
 function NotificationCard({ 
   notification, 
   onClose,
-  theme 
+  theme,
+  language,
 }: { 
   notification: Notification; 
   onClose: () => void;
   theme: "light" | "dark";
+  language: "id" | "en";
 }) {
+  const productLabel = language === "en" ? "Product" : "Produk";
+
   const getIcon = () => {
     switch (notification.type) {
       case "burst":
@@ -193,7 +202,7 @@ function NotificationCard({
             <p className={`text-xs mt-1 font-medium ${
               theme === "dark" ? "text-gray-400" : "text-gray-500"
             }`}>
-              Produk: {notification.productName}
+              {productLabel}: {notification.productName}
             </p>
           )}
         </div>

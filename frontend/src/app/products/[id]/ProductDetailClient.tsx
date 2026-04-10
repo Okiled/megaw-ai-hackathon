@@ -14,6 +14,7 @@ import { API_URL } from "@/lib/api";
 import { getAuthHeaders, handleAuthError } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import { useTheme } from "@/lib/theme-context";
+import { useLanguage } from "@/lib/language-context";
 
 const UNIT_OPTIONS = [
   { value: 'pcs', label: 'Pcs' },
@@ -60,6 +61,61 @@ interface Props {
 export default function ProductDetailClient({ productId }: Props) {
   const router = useRouter();
   const { theme } = useTheme();
+  const { language, locale } = useLanguage();
+  const isEnglish = language === "en";
+  const copy = isEnglish
+    ? {
+        notFound: "Product not found",
+        back: "Back",
+        backToProducts: "Back to Products",
+        goToProducts: "Go to Products",
+        productName: "Product Name",
+        unit: "Unit",
+        price: "Price",
+        save: "Save",
+        cancel: "Cancel",
+        edit: "Edit",
+        delete: "Delete",
+        deleteQuestion: "Delete Product?",
+        deactivate: "Deactivate",
+        deactivateMessage: (count: number) => `This product has ${count} sales records. It will be deactivated instead of deleted permanently.`,
+        deleteMessage: "This product will be deleted permanently. This action cannot be undone.",
+        sold30d: "Sold (30d)",
+        revenue30d: "Revenue (30d)",
+        salesHistory: "Sales History (Last 30 Days)",
+        date: "Date",
+        quantity: "Quantity",
+        revenue: "Revenue",
+        noSalesData: "No sales data yet",
+        saveFailed: "Failed to save product",
+        deleteFailed: "Failed to delete product",
+      }
+    : {
+        notFound: "Produk tidak ditemukan",
+        back: "Kembali",
+        backToProducts: "Kembali ke Produk",
+        goToProducts: "Ke Halaman Produk",
+        productName: "Nama Produk",
+        unit: "Unit",
+        price: "Harga",
+        save: "Simpan",
+        cancel: "Batal",
+        edit: "Edit",
+        delete: "Hapus",
+        deleteQuestion: "Hapus Produk?",
+        deactivate: "Nonaktifkan",
+        deactivateMessage: (count: number) => `Produk ini memiliki ${count} data penjualan. Produk akan dinonaktifkan, bukan dihapus permanen.`,
+        deleteMessage: "Produk akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.",
+        sold30d: "Terjual (30h)",
+        revenue30d: "Pendapatan (30h)",
+        salesHistory: "Riwayat Penjualan (30 Hari Terakhir)",
+        date: "Tanggal",
+        quantity: "Jumlah",
+        revenue: "Pendapatan",
+        noSalesData: "Belum ada data penjualan",
+        saveFailed: "Gagal menyimpan produk",
+        deleteFailed: "Gagal menghapus produk",
+      };
 
   const sanitizeNumericInput = (value: string) => value.replace(/[^\d]/g, "");
 
@@ -88,7 +144,7 @@ export default function ProductDetailClient({ productId }: Props) {
       if (handleAuthError(res.status, router)) return;
 
       if (!res.ok) {
-        throw new Error('Produk tidak ditemukan');
+        throw new Error(copy.notFound);
       }
 
       const result = await res.json();
@@ -98,12 +154,12 @@ export default function ProductDetailClient({ productId }: Props) {
         setEditUnit(result.data.product.unit);
         setEditPrice(result.data.product.price?.toString() || '');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : copy.notFound);
     } finally {
       setLoading(false);
     }
-  }, [productId, router]);
+  }, [productId, router, copy.notFound]);
 
   useEffect(() => {
     if (productId) {
@@ -139,9 +195,12 @@ export default function ProductDetailClient({ productId }: Props) {
       if (res.ok) {
         await fetchProductDetail();
         setIsEditing(false);
+      } else {
+        alert(copy.saveFailed);
       }
     } catch (err) {
       logger.error('Save product error:', err);
+      alert(copy.saveFailed);
     } finally {
       setSaving(false);
     }
@@ -160,11 +219,11 @@ export default function ProductDetailClient({ productId }: Props) {
       if (res.ok && result.success) {
         router.push('/products');
       } else {
-        alert(result.error || 'Gagal menghapus produk');
+         alert(result.error || copy.deleteFailed);
       }
     } catch (err) {
       logger.error('Delete product error:', err);
-      alert('Gagal menghapus produk');
+      alert(copy.deleteFailed);
     } finally {
       setDeleting(false);
       setShowDeleteConfirm(false);
@@ -174,21 +233,21 @@ export default function ProductDetailClient({ productId }: Props) {
   const getMomentumBadge = (label: string | undefined) => {
     switch (label) {
       case 'TRENDING_UP':
-        return <Badge className="bg-green-100 text-green-700">Trending Up</Badge>;
+        return <Badge className="bg-green-100 text-green-700">{isEnglish ? "Trending Up" : "Naik Tajam"}</Badge>;
       case 'GROWING':
-        return <Badge className="bg-emerald-50 text-emerald-600">Growing</Badge>;
+        return <Badge className="bg-emerald-50 text-emerald-600">{isEnglish ? "Growing" : "Tumbuh"}</Badge>;
       case 'FALLING':
-        return <Badge className="bg-red-100 text-red-700">Falling</Badge>;
+        return <Badge className="bg-red-100 text-red-700">{isEnglish ? "Falling" : "Turun"}</Badge>;
       case 'DECLINING':
-        return <Badge className="bg-orange-100 text-orange-700">Declining</Badge>;
+        return <Badge className="bg-orange-100 text-orange-700">{isEnglish ? "Declining" : "Melemah"}</Badge>;
       default:
-        return <Badge className="bg-gray-100 text-gray-600">Stable</Badge>;
+        return <Badge className="bg-gray-100 text-gray-600">{isEnglish ? "Stable" : "Stabil"}</Badge>;
     }
   };
 
   const formatRupiah = (num: number | null) => {
     if (!num) return '-';
-    return new Intl.NumberFormat("id-ID", { 
+    return new Intl.NumberFormat(locale, {
       style: "currency", 
       currency: "IDR", 
       minimumFractionDigits: 0 
@@ -213,13 +272,13 @@ export default function ProductDetailClient({ productId }: Props) {
         <div className="max-w-7xl mx-auto px-4 py-8">
           <Button variant="outline" onClick={() => router.back()} className="mb-4">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Kembali
+              {copy.back}
           </Button>
           <Card>
             <CardContent className="p-8 text-center">
-              <p className="text-red-600 font-medium">{error || 'Produk tidak ditemukan'}</p>
+              <p className="text-red-600 font-medium">{error || copy.notFound}</p>
               <Button className="mt-4" onClick={() => router.push('/products')}>
-                Ke Halaman Produk
+                {copy.goToProducts}
               </Button>
             </CardContent>
           </Card>
@@ -239,7 +298,7 @@ export default function ProductDetailClient({ productId }: Props) {
         <div className="mb-6">
           <Button variant="outline" onClick={() => router.back()} className={`mb-4 ${theme === "dark" ? "text-gray-300 hover:bg-gray-700 hover:text-gray-100 border-gray-600" : "text-gray-600 hover:text-gray-900"}`}>
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Kembali ke Produk
+            {copy.backToProducts}
           </Button>
 
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
@@ -248,18 +307,18 @@ export default function ProductDetailClient({ productId }: Props) {
                 {isEditing ? (
                   <div className="space-y-4">
                     <Input 
-                      label="Nama Produk"
+                      label={copy.productName}
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                     />
                     <Select 
-                      label="Unit"
+                      label={copy.unit}
                       options={UNIT_OPTIONS}
                       value={editUnit}
                       onChange={(e) => setEditUnit(e.target.value)}
                     />
                     <Input 
-                      label="Harga"
+                      label={copy.price}
                       type="number"
                       value={editPrice}
                       inputMode="numeric"
@@ -272,11 +331,11 @@ export default function ProductDetailClient({ productId }: Props) {
                     <div className="flex gap-2">
                       <Button onClick={handleSave} isLoading={saving} className="bg-green-600 hover:bg-green-700 text-white">
                         <Save className="w-4 h-4 mr-2" />
-                        Simpan
+                        {copy.save}
                       </Button>
                       <Button variant="outline" onClick={() => setIsEditing(false)} className={theme === "dark" ? "border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-gray-100" : ""}>
                         <X className="w-4 h-4 mr-2" />
-                        Batal
+                        {copy.cancel}
                       </Button>
                     </div>
                   </div>
@@ -299,7 +358,7 @@ export default function ProductDetailClient({ productId }: Props) {
                       <div className="flex items-center gap-2 ml-auto">
                         <Button variant="outline" size="sm" onClick={() => setIsEditing(true)} className={theme === "dark" ? "border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-gray-100" : ""}>
                           <Edit2 className="w-4 h-4 sm:mr-1" />
-                          <span className="hidden sm:inline">Edit</span>
+                          <span className="hidden sm:inline">{copy.edit}</span>
                         </Button>
                         <Button 
                           variant="outline" 
@@ -308,7 +367,7 @@ export default function ProductDetailClient({ productId }: Props) {
                           className={`${theme === "dark" ? "text-red-400 border-red-800 hover:bg-red-900/30 hover:text-red-300" : "text-red-600 border-red-200 hover:bg-red-50"}`}
                         >
                           <Trash2 className="w-4 h-4 sm:mr-1" />
-                          <span className="hidden sm:inline">Hapus</span>
+                          <span className="hidden sm:inline">{copy.delete}</span>
                         </Button>
                       </div>
                     </div>
@@ -328,15 +387,15 @@ export default function ProductDetailClient({ productId }: Props) {
                     <AlertTriangle className={`w-6 h-6 ${theme === "dark" ? "text-red-400" : "text-red-600"}`} />
                   </div>
                   <div>
-                    <h3 className={`text-lg font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Hapus Produk?</h3>
+                    <h3 className={`text-lg font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{copy.deleteQuestion}</h3>
                     <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>&quot;{product.name}&quot;</p>
                   </div>
                 </div>
                 
                 <p className={`mb-6 ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>
                   {salesHistory.length > 0 
-                    ? `Produk ini memiliki ${salesHistory.length} data penjualan. Produk akan dinonaktifkan, bukan dihapus permanen.`
-                    : 'Produk akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.'
+                    ? copy.deactivateMessage(salesHistory.length)
+                    : copy.deleteMessage
                   }
                 </p>
 
@@ -347,7 +406,7 @@ export default function ProductDetailClient({ productId }: Props) {
                     disabled={deleting}
                     className={theme === "dark" ? "border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-gray-100" : ""}
                   >
-                    Batal
+                    {copy.cancel}
                   </Button>
                   <Button 
                     onClick={handleDelete}
@@ -355,7 +414,7 @@ export default function ProductDetailClient({ productId }: Props) {
                     className="bg-red-600 hover:bg-red-700 text-white"
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
-                    {salesHistory.length > 0 ? 'Nonaktifkan' : 'Hapus'}
+                    {salesHistory.length > 0 ? copy.deactivate : copy.delete}
                   </Button>
                 </div>
               </CardContent>
@@ -371,7 +430,7 @@ export default function ProductDetailClient({ productId }: Props) {
                   <TrendingUp className={`w-4 h-4 sm:w-5 sm:h-5 ${theme === "dark" ? "text-blue-400" : "text-blue-600"}`} />
                 </div>
                 <div>
-                  <p className={`text-xs sm:text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>Terjual (30h)</p>
+                  <p className={`text-xs sm:text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.sold30d}</p>
                   <p className={`text-lg sm:text-2xl font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{totalSales}</p>
                 </div>
               </div>
@@ -385,7 +444,7 @@ export default function ProductDetailClient({ productId }: Props) {
                   <TrendingUp className={`w-4 h-4 sm:w-5 sm:h-5 ${theme === "dark" ? "text-green-400" : "text-green-600"}`} />
                 </div>
                 <div>
-                  <p className={`text-xs sm:text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>Revenue (30h)</p>
+                  <p className={`text-xs sm:text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.revenue30d}</p>
                   <p className={`text-lg sm:text-2xl font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{formatRupiah(totalRevenue)}</p>
                 </div>
               </div>
@@ -421,30 +480,30 @@ export default function ProductDetailClient({ productId }: Props) {
 
         <Card className={`mt-8 ${theme === "dark" ? "bg-gray-800 border-gray-700" : ""}`}>
           <CardHeader className={`border-b ${theme === "dark" ? "border-gray-700" : ""}`}>
-            <h3 className={`font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Riwayat Penjualan (30 Hari Terakhir)</h3>
+            <h3 className={`font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{copy.salesHistory}</h3>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className={theme === "dark" ? "bg-gray-900" : "bg-gray-50"}>
                   <tr>
-                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>Tanggal</th>
-                    <th className={`px-6 py-3 text-right text-xs font-medium uppercase ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>Quantity</th>
-                    <th className={`px-6 py-3 text-right text-xs font-medium uppercase ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>Revenue</th>
+                    <th className={`px-6 py-3 text-left text-xs font-medium uppercase ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.date}</th>
+                    <th className={`px-6 py-3 text-right text-xs font-medium uppercase ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.quantity}</th>
+                    <th className={`px-6 py-3 text-right text-xs font-medium uppercase ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{copy.revenue}</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${theme === "dark" ? "divide-gray-700" : "divide-gray-200"}`}>
                   {salesHistory.length === 0 ? (
                     <tr>
                       <td colSpan={3} className={`px-6 py-8 text-center ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
-                        Belum ada data penjualan
+                        {copy.noSalesData}
                       </td>
                     </tr>
                   ) : (
                     salesHistory.slice().reverse().map((sale, idx) => (
                       <tr key={idx} className={theme === "dark" ? "hover:bg-gray-700/50" : "hover:bg-gray-50"}>
                         <td className={`px-6 py-4 text-sm ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
-                          {new Date(sale.date).toLocaleDateString('id-ID', {
+                          {new Date(sale.date).toLocaleDateString(locale, {
                             weekday: 'short',
                             day: 'numeric',
                             month: 'short',

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/lib/theme-context";
+import { LanguageProvider } from "@/lib/language-context";
 import { NotificationProvider } from "@/components/ui/NotificationToast";
 
 const inter = Inter({
@@ -107,11 +108,13 @@ export default function RootLayout({
       <body
         className={`${inter.variable} antialiased min-h-screen bg-background font-sans`}
       >
-        <ThemeProvider>
-          <NotificationProvider>
-            {children}
-          </NotificationProvider>
-        </ThemeProvider>
+        <LanguageProvider>
+          <ThemeProvider>
+            <NotificationProvider>
+              {children}
+            </NotificationProvider>
+          </ThemeProvider>
+        </LanguageProvider>
       </body>
     </html>
   );
